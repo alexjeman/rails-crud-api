@@ -42,7 +42,7 @@ end
 
 group :development, :test do
   # Testing framework
-  gem 'rspec-rails'
+  gem 'rspec-rails', '~> 3.5'
 end
 
 group :test do
