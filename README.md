@@ -1,24 +1,715 @@
-# README
+# Rails 6 REST API with authentication example
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+- [JWT authentication branch](https://github.com/alexjeman/rails-crud-api/tree/jwt_authentication)
+- [Devise JWT branch](https://github.com/alexjeman/rails-crud-api/tree/devise_jwt)
 
-Things you may want to cover:
+### New --api app
+```
+rails new demo-api --api
+```
 
-* Ruby version
+### Setup dotenv
+```
+gem 'dotenv'
+```
 
-* System dependencies
+### require dotenv in config/application.rb
+```
+require 'dotenv/load'
+```
 
-* Configuration
+### Setup CORS config/application.rb
+```
+gem 'rack-cors'
+```
 
-* Database creation
+### Add CORS settings to config/application.rb
+```
+module RailsCrudApi
+  class Application < Rails::Application
+    # [...]
+    
+    # CORS
+    config.middleware.insert_before 0, Rack::Cors do
+      allow do
+        origins '*'
+        resource '*', headers: :any, methods: %i[get post patch put]
+      end
+    end
 
-* Database initialization
+    # [...]
+  end
+end
+```
 
-* How to run the test suite
+### Create Todo model
+```
+rails g model Todo title:string created_by:string
+```
 
-* Services (job queues, cache servers, search engines, etc.)
+### Create Item model. By adding todo:references we’re telling the generator to set up an association with the Todo model.
+```
+rails g model Item name:string done:boolean todo:references
+```
 
-* Deployment instructions
+### Run migrations
+```
+rails db:migrate
+```
 
-* ...
+### Create controllers
+```
+rails g controller Todos
+rails g controller Items
+```
+
+# Item validations and associations app/models/item.rb
+```
+class Item < ApplicationRecord
+  # Model associations
+  belongs_to :todo
+
+  # Validations
+  validates_presence_of :name
+end
+```
+
+### Todo validations and associations app/models/todo.rb
+```
+class Todo < ApplicationRecord
+  # Model association
+  has_many :items, dependent: :destroy
+
+  # Validation
+  validates_presence_of :title, :created_by
+end
+``` 
+
+### config/routes.rb
+```
+Rails.application.routes.draw do
+  resources :todos do
+    resources :items
+  end
+end
+```
+
+### Todo Controller app/controllers/todos_controller.rb
+```
+class TodosController < ApplicationController
+  # GET /todos
+  def index
+    @todos = Todo.all
+    render json: @todos, status: :ok
+  end
+
+  # GET /todos/:id
+  def show
+    @todo = Todo.find(params[:id])
+    render json: @todo, status: :ok
+  end
+
+  # POST /todos
+  def create
+    @todo = Todo.create!(params.permit(:title, :created_by))
+    render json: @todo, status: :created
+  end
+
+  # PUT /todos/:id
+  def update
+    @todo = Todo.find(params[:id])
+    @todo.update(params.permit(:title, :created_by))
+    head :no_content
+  end
+
+  # DELETE /todos/:id
+  def destroy
+    @todo = Todo.find(params[:id])
+    @todo.destroy
+    head :no_content
+  end
+end
+
+```
+
+### Exception handler app/controllers/concerns/exception_handler.rb
+```
+module ExceptionHandler
+  extend ActiveSupport::Concern
+
+  included do
+    rescue_from ActiveRecord::RecordNotFound do |e|
+      render json: { message: e.message }, status: :not_found
+    end
+
+    rescue_from ActiveRecord::RecordInvalid do |e|
+      render json: { message: e.message }, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+### Include exception handler in app/controllers/application_controller.rb
+```
+class ApplicationController < ActionController::API
+  include ExceptionHandler
+end
+```
+
+### Item Controller app/controllers/items_controller.rb
+```
+class ItemsController < ApplicationController
+  # GET /todos/:todo_id/items
+  def index
+    @todo = Todo.find(params[:todo_id])
+    render json: @todo, status: :ok
+  end
+
+  # GET /todos/:todo_id/items/:id
+  def show
+    @todo = Todo.find(params[:todo_id])
+    @item = @todo.items.find_by!(id: params[:id]) if @todo
+    render json: @item, status: :ok
+  end
+
+  # POST /todos/:todo_id/items
+  def create
+    @todo = Todo.find(params[:todo_id])
+    @todo.items.create!(params.permit(:name, :done))
+    render json: @todo, status: :created
+  end
+
+  # PUT /todos/:todo_id/items/:id
+  def update
+    @todo = Todo.find(params[:todo_id])
+    @item = @todo.items.find_by!(id: params[:id]) if @todo
+    @item.update(params.permit(:name, :done))
+    head :no_content
+  end
+
+  # DELETE /todos/:todo_id/items/:id
+  def destroy
+    @todo = Todo.find(params[:todo_id])
+    @item = @todo.items.find_by!(id: params[:id]) if @todo
+    @item.destroy
+    head :no_content
+  end
+end
+```
+
+# Add JWT Authentication
+
+### Add gems
+```
+gem 'bcrypt'
+gem 'jwt'
+```
+
+### Create models
+```
+rails g model User name:string email:string password_digest:string
+rails db:migrate
+```
+
+# User validations and associations app/models/user.rb
+```
+class User < ApplicationRecord
+  # Encrypt password
+  has_secure_password
+
+  # Model associations
+  has_many :todos, foreign_key: :created_by
+  # Validations
+  validates_presence_of :name, :email, :password_digest
+end
+```
+
+### Create custom lib for JWT
+```
+mkdir app/lib
+touch app/lib/json_web_token.rb
+```
+
+### app/lib/json_web_token.rb
+```
+class JsonWebToken
+  # Secret to encode and decode token
+  HMAC_SECRET = Rails.application.credentials.secret_key_base
+
+  def self.encode(payload, exp = 24.hours.from_now)
+    # Set expiry to 24 hours from creation time
+    payload[:exp] = exp.to_i
+    # Sign token with application secret
+    JWT.encode(payload, HMAC_SECRET)
+  end
+
+  def self.decode(token)
+    # Get payload; first index in decoded Array
+    body = JWT.decode(token, HMAC_SECRET, true, { algorithm: 'HS256' }).first
+    HashWithIndifferentAccess.new body
+    # Rescue from all decode errors
+  rescue JWT::DecodeError => e
+    # Raise custom error to be handled by custom handler
+    raise ExceptionHandler::InvalidToken, e.message
+  end
+end
+```
+
+### Update Exception handler app/controllers/concerns/exception_handler.rb
+```
+module ExceptionHandler
+  extend ActiveSupport::Concern
+
+  # Define custom error subclasses - rescue catches `StandardErrors`
+  class AuthenticationError < StandardError; end
+  class MissingToken < StandardError; end
+  class InvalidToken < StandardError; end
+  class ExpiredSignature < StandardError; end
+
+  included do
+    rescue_from ExceptionHandler::AuthenticationError do |e|
+      render json: { message: e.message }, status: :unauthorized
+    end
+
+    rescue_from ExceptionHandler::MissingToken do |e|
+      render json: { message: e.message }, status: :unauthorized
+    end
+
+    rescue_from ExceptionHandler::InvalidToken do |e|
+      render json: { message: e.message }, status: :unauthorized
+    end
+
+    rescue_from ActiveRecord::RecordNotFound do |e|
+      render json: { message: e.message }, status: :not_found
+    end
+
+    rescue_from ActiveRecord::RecordInvalid do |e|
+      render json: { message: e.message }, status: :unprocessable_entity
+    end
+  end
+end
+```
+
+### Authorize API reuests
+```
+mkdir app/auth
+touch app/auth/authorize_api_request.rb
+```
+
+### app/auth/authorize_api_request.rb
+```
+class AuthorizeApiRequest
+  def initialize(headers = {})
+    @headers = headers
+  end
+
+  # Entry point - return valid user object
+  def call
+    {
+      user: user
+    }
+  end
+
+  private
+
+  attr_reader :headers
+
+  def user
+    # Check if user is in the database
+    @user ||= User.find(decoded_auth_token[:user_id]) if decoded_auth_token
+    # Handle user not found
+  rescue ActiveRecord::RecordNotFound => e
+    raise(
+      ExceptionHandler::InvalidToken,
+      ("#{Message.invalid_token} #{e.message}")
+    )
+  end
+
+  # Decode authentication token
+  def decoded_auth_token
+    @decoded_auth_token ||= JsonWebToken.decode(http_auth_header)
+  end
+
+  # Check for token in 'Authorization' headers
+  def http_auth_header
+    return headers['Authorization'].split(' ').last if headers['Authorization'].present?
+
+    raise(ExceptionHandler::MissingToken, Message.missing_token)
+  end
+end
+
+```
+
+### Define custom messaging app/lib/message.rb
+```
+class Message
+  def self.not_found(record = 'record')
+    "Sorry, #{record} not found."
+  end
+
+  def self.invalid_credentials
+    'Invalid credentials'
+  end
+
+  def self.invalid_token
+    'Invalid token'
+  end
+
+  def self.missing_token
+    'Missing token'
+  end
+
+  def self.unauthorized
+    'Unauthorized request'
+  end
+
+  def self.account_created
+    'Account created successfully'
+  end
+
+  def self.account_not_created
+    'Account could not be created'
+  end
+
+  def self.expired_token
+    'Sorry, your token has expired. Please login to continue.'
+  end
+end
+```
+
+### Authenticate User
+```
+touch app/auth/authenticate_user.rb
+```
+
+### app/auth/authenticate_user.rb
+```
+class AuthenticateUser
+  def initialize(email, password)
+    @email = email
+    @password = password
+  end
+
+  # Entry point
+  def call
+    JsonWebToken.encode(user_id: user.id) if user
+  end
+
+  private
+
+  attr_reader :email, :password
+
+  # Verify user credentials
+  def user
+    user = User.find_by(email: email)
+    return user if user&.authenticate(password)
+
+    # Raise Authentication error if credentials are invalid
+    raise(ExceptionHandler::AuthenticationError, Message.invalid_credentials)
+  end
+end
+
+```
+
+### Generate the Authentication controller
+```
+rails g controller Authentication
+```
+
+### app/controllers/authentication_controller.rb
+```
+class AuthenticationController < ApplicationController
+  # Return token oce user is authenticated
+  def authenticate
+    auth_token = AuthenticateUser.new(auth_params[:email], auth_params[:password]).call
+    response = { auth_token: auth_token, token_type: 'Bearer' }
+    render json: response, status: :ok
+  end
+
+  def auth_params
+    params.permit(:email, :password)
+  end
+end
+```
+
+### Add to config/routes.rb
+```
+Rails.application.routes.draw do
+  # [...]
+  post 'auth/login', to: 'authentication#authenticate'
+end
+```
+
+### Generate users controller
+```
+rails g controller Users
+```
+
+### User controller app/controllers/users_controller.rb
+```
+class UsersController < ApplicationController
+  # POST /signup
+  # return authenticated token upon signup
+  def create
+    user = User.create!(params.permit(:name, :email, :password, :password_confirmation))
+    auth_token = AuthenticateUser.new(user.email, user.password).call
+    response = { message: Message.account_created, auth_token: auth_token, token_type: 'Bearer' }
+    render json: response, status: :created
+  end
+end
+```
+
+### Add to config/routes.rb
+```
+Rails.application.routes.draw do
+  # [...]
+  post 'signup', to: 'users#create'
+end
+```
+
+### Update todos controller app/controllers/todos_controller.rb
+```
+class TodosController < ApplicationController
+  # [...]
+  # GET /todos
+  def index
+    @todos = current_user.todos
+    render json: @todos, status: :ok
+  end
+  # [...]
+  # POST /todos
+  def create
+    @todo = current_user.todos.create!(params.permit(:title))
+    render json: @todo, status: :created
+  end
+  # [...]
+  private
+
+  # remove `created_by` from list of permitted parameters
+  params.permit(:title)
+end
+```
+
+### Update app/controllers/application_controller.rb
+```
+class ApplicationController < ActionController::API
+  include ExceptionHandler
+
+  # Called before every action in controllers
+  before_action :authorize_request
+  attr_reader :current_user
+
+  private
+
+  # Check for valid request token and return user
+  def authorize_request
+    @current_user = (AuthorizeApiRequest.new(request.headers).call)[:user]
+  end
+end
+```
+
+### Update app/controllers/authentication_controller.rb
+```
+class AuthenticationController < ApplicationController
+  skip_before_action :authorize_request, only: :authenticate
+  # [...]
+end
+```
+
+### Update app/controllers/users_controller.rb
+```
+class UsersController < ApplicationController
+  skip_before_action :authorize_request, only: :create
+  # [...]
+end
+```
+
+### Update Todo model associations
+```
+class User < ApplicationRecord
+  # [...]
+  # Model associations
+  has_many :todos, foreign_key: :created_by
+end
+```
+
+### Update Todo controller
+```
+class TodosController < ApplicationController
+  before_action :authenticate_user!
+
+  # GET /todos
+  def index
+    @todos = current_user.todos
+    render json: @todos, status: :ok
+  end
+
+  # [...]
+
+  # POST /todos
+  def create
+    @todo = current_user.todos.create!(params.permit(:title))
+    render json: @todo, status: :created
+  end
+end
+
+```
+### POSTMAN
+```
+http://127.0.0.1:3000/auth/signup POST {"name": "John Doe", "email": "user@example.com", "password": "password"}
+http://127.0.0.1:3000/auth/login POST {"email": "user@example.com", "password": "password"}
+```
+
+
+# Add DEVISE JWT Authentication
+
+### Add devise and devise-jwt gems
+```
+gem 'devise'
+gem 'devise-jwt'
+```
+
+### Run devise install script
+```
+rails generate devise:install
+rails generate devise user
+```
+
+### Add in  config/environments/development.rb and  config/environments/production.rb 
+```
+config.action_mailer.default_url_options = { host: '127.0.0.1', port: 3000 }
+```
+
+### Generate CreateJwtDenylist migration
+```
+rails generate migration CreateJwtDenylist
+```
+
+### Add to the CreateJwtDenylist migration
+```
+class CreateJwtDenylist < ActiveRecord::Migration[6.0]
+  def change
+    create_table :jwt_denylist do |t|
+      t.string :jti, null: false
+      t.datetime :expired_at, null: false
+    end
+    add_index :jwt_denylist, :jti
+  end
+end 
+```
+
+### Create app/models/jwt_denylist.rb
+```
+class JwtDenylist < ApplicationRecord
+  include Devise::JWT::RevocationStrategies::Denylist
+
+  self.table_name = 'jwt_denylist'
+end
+```
+
+### Add to the user model
+```
+class User < ApplicationRecord
+  # [...] ,
+  :timeoutable, :jwt_authenticatable, jwt_revocation_strategy: JwtDenylist
+end
+```
+
+### Devise setup config/initializers/devise.rb
+```
+Devise.setup do |config|
+  # [...]
+  config.jwt do |jwt|
+    jwt.secret = ENV['SECRET_KEY']
+    warn('warning: jwt.secret can not be nil') if jwt.secret.nil?
+    #  You need to tell which requests will dispatch tokens for the user that has been previously
+    #  authenticated (usually through some other warden strategy, such as one requiring username and email parameters).
+    #  To configure it, you can add the the request path to dispath_requests
+    jwt.dispatch_requests = [['POST', %r{^users/sign_in$}]]
+
+    #  You need to tell which requests will revoke incoming JWT tokens, and you can add the the request path to revocation_requests
+    jwt.revocation_requests = [['DELETE', %r{^users/sign_out$}]]
+    jwt.expiration_time = 1.day.to_i
+  end
+  config.remember_for = 1.day.to_i
+  config.timeout_in = 1.day.to_i
+  config.navigational_formats = []
+end
+```
+
+### Update routes config/routes.rb
+```
+Rails.application.routes.draw do
+  devise_for :users, controllers: { sessions: 'users/sessions', registrations: 'users/registrations' }
+  resources :todos do
+    resources :items
+  end
+end
+```
+
+### Optionally generate user controllers
+```
+rails generate devise:controllers users
+```
+
+### Update Todo model associations
+```
+class User < ApplicationRecord
+  # [...]
+  # Model associations
+  has_many :todos, foreign_key: :created_by
+end
+```
+
+### Update Todo controller
+```
+class TodosController < ApplicationController
+  before_action :authenticate_user!
+
+  # GET /todos
+  def index
+    @todos = current_user.todos
+    render json: @todos, status: :ok
+  end
+
+  # [...]
+
+  # POST /todos
+  def create
+    @todo = current_user.todos.create!(params.permit(:title))
+    render json: @todo, status: :created
+  end
+end
+
+```
+
+### Update controllers/users/registrations_controller.rb
+```
+class Users::RegistrationsController < Devise::RegistrationsController
+  respond_to :json
+end
+```
+
+### Update controllers/users/sessions_controller.rb
+```
+class Users::SessionsController < Devise::SessionsController
+  respond_to :json
+
+  private
+
+  def respond_with(resource, _opts = {})
+    render json: resource
+  end
+
+  def respond_to_on_destroy
+    head :no_content
+  end
+end
+```
+
+### POSTMAN
+```
+http://127.0.0.1:3000/users POST {"user": {"email": "user@example.com", "password": "password"}}
+http://127.0.0.1:3000/users/sign_in POST {"user": {"email": "user@example.com", "password": "password"}}
+http://127.0.0.1:3000/users/sign_out DELETE
+```
