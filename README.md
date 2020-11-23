@@ -1,8 +1,12 @@
 # Rails 6 REST API with authentication example
 
+## Implementation
 - [JWT authentication branch](https://github.com/alexjeman/rails-crud-api/tree/jwt_authentication)
 - [Devise JWT branch](https://github.com/alexjeman/rails-crud-api/tree/devise_jwt)
 
+## Readme Instructions
+- [JWT authentication instruction](https://github.com/alexjeman/rails-crud-api#add-jwt-authentication)
+- [Devise JWT instructions](https://github.com/alexjeman/rails-crud-api#add-devise-jwt-authentication)
 ### New --api app
 ```
 rails new demo-api --api
