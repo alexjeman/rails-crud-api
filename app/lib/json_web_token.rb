@@ -1,6 +1,6 @@
 class JsonWebToken
   # Secret to encode and decode token
-  HMAC_SECRET = Rails.application.secrets.secret_key_base
+  HMAC_SECRET = Rails.application.credentials.secret_key_base
 
   def self.encode(payload, exp = 24.hours.from_now)
     # Set expiry to 24 hours from creation time
@@ -11,7 +11,7 @@ class JsonWebToken
 
   def self.decode(token)
     # Get payload; first index in decoded Array
-    body = JWT.decode(token, HMAC_SECRET).first
+    body = JWT.decode(token, HMAC_SECRET, true, { algorithm: 'HS256' }).first
     HashWithIndifferentAccess.new body
     # Rescue from all decode errors
   rescue JWT::DecodeError => e

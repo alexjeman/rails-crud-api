@@ -14,7 +14,7 @@ class AuthenticateUser
   attr_reader :email, :password
 
   # Verify user credentials
-  def use
+  def user
     user = User.find_by(email: email)
     return user if user&.authenticate(password)
 
