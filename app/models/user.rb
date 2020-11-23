@@ -4,4 +4,7 @@ class User < ApplicationRecord
   devise :database_authenticatable, :registerable,
          :recoverable, :rememberable, :validatable,
          :timeoutable, :jwt_authenticatable, jwt_revocation_strategy: JwtDenylist
+
+  # Model associations
+  has_many :todos, foreign_key: :created_by
 end
