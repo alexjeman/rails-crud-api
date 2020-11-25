@@ -717,3 +717,91 @@ http://127.0.0.1:3000/users POST {"user": {"email": "user@example.com", "passwor
 http://127.0.0.1:3000/users/sign_in POST {"user": {"email": "user@example.com", "password": "password"}}
 http://127.0.0.1:3000/users/sign_out DELETE
 ```
+
+# RSpec unit tests
+
+### Add gems
+```
+gem 'rspec-rails', '~> 4.0.1'
+gem 'database_cleaner', '~> 1.8.5'
+gem 'factory_bot_rails', '~> 6.1.0'
+gem 'faker', '~> 2.15.1'
+gem 'shoulda-matchers', '~> 4.4.1'
+```
+
+### Run RSpec install
+```
+rails generate rspec:install
+```
+
+### RSpec configuration spec/rails_helper.rb
+```
+# Require database cleaner 
+require 'database_cleaner'
+
+# [...]
+# configure shoulda matchers to use rspec
+Shoulda::Matchers.configure do |config|
+  config.integrate do |with|
+    with.test_framework :rspec
+    with.library :rails
+  end
+end
+
+# [...]
+RSpec.configure do |config|
+  # [...]
+  # add `FactoryBot` methods
+  config.include FactoryBot::Syntax::Methods
+
+  # start by truncating all the tables
+  config.before(:suite) do
+    DatabaseCleaner.clean_with(:truncation)
+    DatabaseCleaner.strategy = :transaction
+  end
+
+  # start the transaction strategy as examples are run
+  config.around(:each) do |example|
+    DatabaseCleaner.cleaning do
+      example.run
+    end
+  end
+  # [...]
+  config.default_formatter = 'doc'
+end
+```
+
+## RSpec model tests
+
+### Add Todo model test spec/models/todo_spec.rb
+```
+require 'rails_helper'
+
+# Test suite for the Todo model
+RSpec.describe Todo, type: :model do
+  # Association test
+  # ensure Todo model has a one to many relationship with the Item model
+  it { should have_many(:items).dependent(:destroy) }
+
+  # Validation tests
+  # ensure columns title and created_by are present before saving
+  it { should validate_presence_of(:title) }
+  it { should validate_presence_of(:created_by) }
+end
+```
+
+### Add Item model test spec/models/item_spec.rb
+```
+require 'rails_helper'
+
+# Test suite for the Item model
+RSpec.describe Item, type: :model do
+  # Association test
+  # ensure an item record belongs to a single todo record
+  it { should belong_to(:todo) }
+
+  # Validation test
+  # ensure name is present before saving
+  it { should validate_presence_of(:name) }
+end
+```
