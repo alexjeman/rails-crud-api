@@ -7,6 +7,8 @@
 ## Readme Instructions
 - [JWT authentication instruction](https://github.com/alexjeman/rails-crud-api#add-jwt-authentication)
 - [Devise JWT instructions](https://github.com/alexjeman/rails-crud-api#add-devise-jwt-authentication)
+- [RSpec unit tests instructions](https://github.com/alexjeman/rails-rest-api#rspec-unit-tests)
+
 ### New --api app
 ```
 rails new demo-api --api
