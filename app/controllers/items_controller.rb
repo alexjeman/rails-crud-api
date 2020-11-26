@@ -23,8 +23,11 @@ class ItemsController < ApplicationController
   def update
     @todo = Todo.find(params[:todo_id])
     @item = @todo.items.find_by!(id: params[:id]) if @todo
-    @item.update(params.permit(:name, :done))
-    head :no_content
+    if @item.update(params.permit(:name, :done))
+      head :no_content
+    else
+      head :unprocessable_entity
+    end
   end
 
   # DELETE /todos/:todo_id/items/:id
