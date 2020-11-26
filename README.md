@@ -7,7 +7,8 @@
 ## Readme Instructions
 - [JWT authentication instruction](https://github.com/alexjeman/rails-crud-api#add-jwt-authentication)
 - [Devise JWT instructions](https://github.com/alexjeman/rails-crud-api#add-devise-jwt-authentication)
-- [RSpec unit tests instructions](https://github.com/alexjeman/rails-rest-api#rspec-unit-tests)
+- [RSpec models tests instructions](https://github.com/alexjeman/rails-rest-api#rspec-model-tests)
+- [RSpec controllers tests instructions](https://github.com/alexjeman/rails-rest-api#rspec-controllers-tests)
 
 ### New --api app
 ```
@@ -805,5 +806,343 @@ RSpec.describe Item, type: :model do
   # Validation test
   # ensure name is present before saving
   it { should validate_presence_of(:name) }
+end
+```
+
+## RSpec controllers tests
+
+### Create factory files
+```
+touch spec/factories/todos.rb
+touch spec/factories/items.rb
+touch spec/factories/users.rb
+```
+
+### Define spec/factories/todos.rb
+```
+FactoryBot.define do
+  factory :todo do
+    title { Faker::Lorem.word }
+    created_by { 1 }
+  end
+end
+```
+
+### Define spec/factories/items.rb
+```
+FactoryBot.define do
+  factory :item do
+    name { Faker::Movies::Lebowski.character }
+    done { false }
+    todo
+  end
+end
+```
+
+### Define spec/factories/users.rb
+```
+FactoryBot.define do
+  factory :user do
+    sequence(:email, 10) { |n| "test-#{n}@example.com" }
+    password { 'Password123' }
+  end
+end
+```
+
+### Todo spec/controllers/todos_spec.rb
+```
+require 'rails_helper'
+require_relative '../support/devise'
+
+RSpec.describe TodosController, type: :controller do
+  # initialize test data
+  let(:user) { create(:user) }
+  let!(:todos) { create_list(:todo, 10, created_by: 1) }
+  let(:todo_id) { todos.first.id }
+
+  # Test suite for GET /todos
+  describe 'GET /todos' do
+    login_user
+
+    it 'returns todos' do
+      response = get :index
+      # Note `json` is a custom helper to parse JSON responses
+      puts JSON.parse(response.body)
+      expect(JSON.parse(response.body)).not_to be_empty
+      expect(JSON.parse(response.body).size).to eq(10)
+    end
+
+    it 'returns status code 200' do
+      response = get :index
+      expect(response).to have_http_status(200)
+    end
+  end
+
+  # Test suite for GET /todos/:id
+  describe 'GET /todos/:id' do
+    login_user
+
+    context 'when the record exists' do
+      it 'returns the todo' do
+        response = get :show, params: { id: todo_id }
+        expect(JSON.parse(response.body)).not_to be_empty
+        expect(JSON.parse(response.body)['id']).to eq(todo_id)
+      end
+
+      it 'returns status code 200' do
+        response = get :show, params: { id: todo_id }
+        expect(response).to have_http_status(200)
+      end
+    end
+
+    context 'when the record does not exist' do
+      let(:todo_id) { 100 }
+
+      it 'returns status code 404' do
+        response = get :show, params: { id: todo_id }
+        expect(response).to have_http_status(404)
+      end
+
+      it 'returns a not found message' do
+        response = get :show, params: { id: todo_id }
+        expect(response.body).to match(/Couldn't find Todo/)
+      end
+    end
+  end
+
+  # Test suite for POST /todos
+  describe 'POST /todos' do
+    login_user
+
+    context 'when the request is valid' do
+      it 'creates a todo' do
+
+        response = post :create, params: { title: 'Learn Elixir' }
+        expect(JSON.parse(response.body)['title']).to eq('Learn Elixir')
+      end
+
+      it 'returns status code 201' do
+        response = post :create, params: { title: 'Learn Elixir' }
+        expect(response).to have_http_status(201)
+      end
+    end
+
+    context 'when the request is invalid' do
+      it 'returns status code 422' do
+        response = post :create, params: {}
+        expect(response).to have_http_status(422)
+      end
+
+      it 'returns a validation failure message' do
+        response = post :create, params: {}
+        expect(response.body).to match(/Validation failed: Title can't be blank/)
+      end
+    end
+  end
+
+  # Test suite for PUT /todos/:id
+  describe 'PUT /todos/:id' do
+    login_user
+
+    context 'when the record exists' do
+      it 'updates the record' do
+        response = put :update, params: { id: todo_id, title: 'Shopping' }
+        expect(response.body).to be_empty
+      end
+
+      it 'returns status code 204' do
+        response = put :update, params: { id: todo_id, title: 'Shopping' }
+        expect(response).to have_http_status(204)
+      end
+    end
+  end
+
+  # Test suite for DELETE /todos/:id
+  describe 'DELETE /todos/:id' do
+    login_user
+
+    it 'returns status code 204' do
+      response = delete :destroy, params: { id: todo_id }
+      expect(response).to have_http_status(204)
+    end
+  end
+end
+```
+
+### Controller macros spec/support/controller_macros.rb
+```
+module ControllerMacros
+  def login_user
+    before(:each) do
+      @request.env['devise.mapping'] = Devise.mappings[:user]
+      user = FactoryBot.create(:user)
+      sign_in user
+    end
+  end
+end
+```
+
+### JSON helper spec/support/devise.rb
+```
+require_relative './controller_macros'
+
+RSpec.configure do |config|
+  # For Devise > 4.1.1
+  config.include Devise::Test::ControllerHelpers, type: :controller
+  # Use the following instead if you are on Devise <= 4.1.1
+  # config.include Devise::TestHelpers, :type => :controller
+  config.extend ControllerMacros, type: :controller
+end
+```
+
+### Autoload spec/support directory spec/rails_helper.rb 
+```
+require_relative 'support/controller_macros'
+require 'devise'
+Dir[Rails.root.join('spec/support/**/*.rb')].sort.each { |f| require f }
+# [...]
+RSpec.configuration do |config|
+  # [...]
+  config.include RequestSpecHelper, type: :request
+  # [...]
+  config.include Devise::Test::ControllerHelpers, type: :controller
+  config.include Devise::Test::IntegrationHelpers, type: :request
+  config.extend ControllerMacros, type: :controller
+end
+```
+
+### todos/items controller spec/controllers/items_spec.rb
+```
+require 'rails_helper'
+require_relative '../support/devise'
+
+RSpec.describe ItemsController, type: :controller do
+  # Initialize the test data
+  let!(:todo) { create(:todo) }
+  let!(:items) { create_list(:item, 5, todo_id: todo.id) }
+  let(:todo_id) { todo.id }
+  let(:id) { items.first.id }
+
+  # Test suite for GET /todos/:todo_id/items
+  describe 'GET /todos/:todo_id/items' do
+    login_user
+
+    context 'when todo exists' do
+      it 'returns status code 200' do
+        response = get :index, params: { todo_id: todo_id }
+        expect(response).to have_http_status(200)
+      end
+
+      it 'returns all todo items' do
+        response = get :index, params: { todo_id: todo_id }
+        expect(JSON.parse(response.body).size).to eq(5)
+      end
+    end
+
+    context 'when todo does not exist' do
+      let(:todo_id) { 0 }
+
+      it 'returns status code 404' do
+        response = get :index, params: { todo_id: todo_id }
+        expect(response).to have_http_status(404)
+      end
+
+      it 'returns a not found message' do
+        response = get :index, params: { todo_id: todo_id }
+        expect(response.body).to match(/Couldn't find Todo/)
+      end
+    end
+  end
+
+  # Test suite for GET /todos/:todo_id/items/:id
+  describe 'GET /todos/:todo_id/items/:id' do
+    login_user
+
+    context 'when todo item exists' do
+      it 'returns status code 200' do
+        response = get :show, params: { todo_id: todo_id, id: id }
+        expect(response).to have_http_status(200)
+      end
+
+      it 'returns the item' do
+        response = get :show, params: { todo_id: todo_id, id: id }
+        expect(JSON.parse(response.body)['id']).to eq(id)
+      end
+    end
+
+    context 'when todo item does not exist' do
+      let(:id) { 0 }
+
+      it 'returns status code 404' do
+        response = get :show, params: { todo_id: todo_id, id: id }
+        expect(response).to have_http_status(404)
+      end
+
+      it 'returns a not found message' do
+        response = get :show, params: { todo_id: todo_id, id: id }
+        expect(response.body).to match(/Couldn't find Item/)
+      end
+    end
+  end
+
+  # Test suite for PUT /todos/:todo_id/items
+  describe 'POST /todos/:todo_id/items' do
+    login_user
+
+    context 'when request attributes are valid' do
+      it 'returns status code 201' do
+        response = post :create, params: { todo_id: todo_id, name: 'Visit Narnia', done: false }
+        expect(response).to have_http_status(201)
+      end
+    end
+
+    context 'when an invalid request' do
+      it 'returns status code 422' do
+        response = post :create, params: { todo_id: todo_id }
+        expect(response).to have_http_status(422)
+      end
+
+      it 'returns a failure message' do
+        response = post :create, params: { todo_id: todo_id }
+        expect(response.body).to match(/Validation failed: Name can't be blank/)
+      end
+    end
+  end
+
+  # Test suite for PUT /todos/:todo_id/items/:id
+  describe 'PUT /todos/:todo_id/items/:id' do
+    login_user
+
+    context 'when item exists' do
+      it 'returns status code 204' do
+        response = put :update, params: { todo_id: todo_id, id: id, name: 'Mozart' }
+        expect(response).to have_http_status(204)
+      end
+    end
+
+    context 'when the item does not exist' do
+      let(:id) { 0 }
+
+      it 'returns status code 404' do
+        response = put :update, params: { todo_id: todo_id, id: id, name: 'Mozart' }
+        expect(response).to have_http_status(404)
+      end
+
+      it 'returns a not found message' do
+        response = put :update, params: { todo_id: todo_id, id: id, name: 'Mozart' }
+        expect(response.body).to match(/Couldn't find Item/)
+      end
+    end
+  end
+
+  # Test suite for DELETE /todos/:id
+  describe 'DELETE /todos/:id' do
+    login_user
+
+    it 'returns status code 204' do
+      response = delete :destroy, params: { todo_id: todo_id, id: id }
+      expect(response).to have_http_status(204)
+    end
+  end
 end
 ```
