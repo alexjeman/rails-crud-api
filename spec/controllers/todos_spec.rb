@@ -13,8 +13,6 @@ RSpec.describe TodosController, type: :controller do
 
     it 'returns todos' do
       response = get :index
-      # Note `json` is a custom helper to parse JSON responses
-      puts JSON.parse(response.body)
       expect(JSON.parse(response.body)).not_to be_empty
       expect(JSON.parse(response.body).size).to eq(10)
     end

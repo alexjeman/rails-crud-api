@@ -2,7 +2,7 @@
 
 ## Implementation
 - [JWT authentication branch](https://github.com/alexjeman/rails-crud-api/tree/jwt_authentication)
-- [Devise JWT branch](https://github.com/alexjeman/rails-crud-api/tree/devise_jwt)
+- [Devise JWT branch (Merged with master)](https://github.com/alexjeman/rails-crud-api/tree/devise_jwt)
 
 ## Readme Instructions
 - [JWT authentication instruction](https://github.com/alexjeman/rails-crud-api#add-jwt-authentication)
@@ -809,6 +809,22 @@ RSpec.describe Item, type: :model do
 end
 ```
 
+### Add User model test spec/models/user_spec.rb
+```
+require 'rails_helper'
+
+# Test suite for user model
+RSpec.describe User, type: :model do
+  # Association test
+  it { should have_many(:todos) }
+
+  # Validation test
+  # ensure email and password are present
+  it { should validate_presence_of(:email) }
+  it { should validate_presence_of(:password) }
+end
+```
+
 ## RSpec controllers tests
 
 ### Create factory files
@@ -866,8 +882,6 @@ RSpec.describe TodosController, type: :controller do
 
     it 'returns todos' do
       response = get :index
-      # Note `json` is a custom helper to parse JSON responses
-      puts JSON.parse(response.body)
       expect(JSON.parse(response.body)).not_to be_empty
       expect(JSON.parse(response.body).size).to eq(10)
     end
