@@ -3,8 +3,8 @@ require_relative '../support/devise'
 
 RSpec.describe TodosController, type: :controller do
   # initialize test data
-  let(:user) { create(:user) }
-  let!(:todos) { create_list(:todo, 10, created_by: 1) }
+  let!(:user) { create(:user) }
+  let!(:todos) { create_list(:todo, 5, user_id: user.id) }
   let(:todo_id) { todos.first.id }
 
   # Test suite for GET /todos
@@ -14,7 +14,7 @@ RSpec.describe TodosController, type: :controller do
     it 'returns todos' do
       response = get :index
       expect(JSON.parse(response.body)).not_to be_empty
-      expect(JSON.parse(response.body).size).to eq(10)
+      expect(JSON.parse(response.body).size).to eq(5)
     end
 
     it 'returns status code 200' do

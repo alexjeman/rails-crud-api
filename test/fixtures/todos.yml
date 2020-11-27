@@ -2,8 +2,8 @@
 
 one:
   title: MyString
-  created_by: MyString
+  user_id: MyString
 
 two:
   title: MyString
-  created_by: MyString
+  user_id: MyString

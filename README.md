@@ -51,7 +51,7 @@ end
 
 ### Create Todo model
 ```
-rails g model Todo title:string created_by:string
+rails g model Todo title:string user:references
 ```
 
 ### Create Item model. By adding todo:references we’re telling the generator to set up an association with the Todo model.
@@ -85,10 +85,11 @@ end
 ```
 class Todo < ApplicationRecord
   # Model association
+  belongs_to :user
   has_many :items, dependent: :destroy
 
   # Validation
-  validates_presence_of :title, :created_by
+  validates_presence_of :title
 end
 ``` 
 
@@ -118,14 +119,14 @@ class TodosController < ApplicationController
 
   # POST /todos
   def create
-    @todo = Todo.create!(params.permit(:title, :created_by))
+    @todo = Todo.create!(params.permit(:title, :user_id))
     render json: @todo, status: :created
   end
 
   # PUT /todos/:id
   def update
     @todo = Todo.find(params[:id])
-    @todo.update(params.permit(:title, :created_by))
+    @todo.update(params.permit(:title, :user_id))
     head :no_content
   end
 
@@ -225,7 +226,7 @@ class User < ApplicationRecord
   has_secure_password
 
   # Model associations
-  has_many :todos, foreign_key: :created_by
+  has_many :todos, foreign_key: :user_id
   # Validations
   validates_presence_of :name, :email, :password_digest
 end
@@ -492,7 +493,7 @@ class TodosController < ApplicationController
   # [...]
   private
 
-  # remove `created_by` from list of permitted parameters
+  # remove `user_id` from list of permitted parameters
   params.permit(:title)
 end
 ```
@@ -536,7 +537,7 @@ end
 class User < ApplicationRecord
   # [...]
   # Model associations
-  has_many :todos, foreign_key: :created_by
+  has_many :todos, dependent: :destroy
 end
 ```
 
@@ -664,7 +665,7 @@ rails generate devise:controllers users
 class User < ApplicationRecord
   # [...]
   # Model associations
-  has_many :todos, foreign_key: :created_by
+  has_many :todos, foreign_key: :user_id
 end
 ```
 
@@ -784,12 +785,12 @@ require 'rails_helper'
 RSpec.describe Todo, type: :model do
   # Association test
   # ensure Todo model has a one to many relationship with the Item model
+  it { should belong_to(:user) }
   it { should have_many(:items).dependent(:destroy) }
 
   # Validation tests
   # ensure columns title and created_by are present before saving
   it { should validate_presence_of(:title) }
-  it { should validate_presence_of(:created_by) }
 end
 ```
 
@@ -839,7 +840,7 @@ touch spec/factories/users.rb
 FactoryBot.define do
   factory :todo do
     title { Faker::Lorem.word }
-    created_by { 1 }
+    user
   end
 end
 ```
@@ -872,8 +873,8 @@ require_relative '../support/devise'
 
 RSpec.describe TodosController, type: :controller do
   # initialize test data
-  let(:user) { create(:user) }
-  let!(:todos) { create_list(:todo, 10, created_by: 1) }
+  let!(:user) { create(:user) }
+  let!(:todos) { create_list(:todo, 5, user_id: user.id) }
   let(:todo_id) { todos.first.id }
 
   # Test suite for GET /todos
@@ -883,7 +884,7 @@ RSpec.describe TodosController, type: :controller do
     it 'returns todos' do
       response = get :index
       expect(JSON.parse(response.body)).not_to be_empty
-      expect(JSON.parse(response.body).size).to eq(10)
+      expect(JSON.parse(response.body).size).to eq(5)
     end
 
     it 'returns status code 200' do
@@ -990,10 +991,12 @@ module ControllerMacros
     before(:each) do
       @request.env['devise.mapping'] = Devise.mappings[:user]
       user = FactoryBot.create(:user)
+      create_list(:todo, 5, user_id: user.id)
       sign_in user
     end
   end
 end
+
 ```
 
 ### JSON helper spec/support/devise.rb

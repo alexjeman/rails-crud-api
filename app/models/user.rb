@@ -6,5 +6,5 @@ class User < ApplicationRecord
          :timeoutable, :jwt_authenticatable, jwt_revocation_strategy: JwtDenylist
 
   # Model associations
-  has_many :todos, foreign_key: :created_by
+  has_many :todos, dependent: :destroy
 end
